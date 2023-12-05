@@ -8,10 +8,19 @@ on:
     inputs:
       build_target:
         required: false
+        type: string
+
       projects:
         required: false
-      experimental_targets:
+        type: string
+
+      extra_cmake_args:
         required: false
+        type: string
+
+      runs_on:
+        required: false
+        type: string
   workflow_call:
     inputs:
       build_target:
@@ -22,7 +31,11 @@ on:
         required: true
         type: string
 
-      experimental_targets:
+      extra_cmake_args:
+        required: false
+        type: string
+
+      runs_on:
         required: false
         type: string
 
@@ -37,7 +50,7 @@ concurrency:
 jobs:
   lit-tests:
     name: Lit Tests
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(inputs.runs_on) || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -91,7 +104,7 @@ jobs:
           # This should be a no-op for non-mac OSes
           PKG_CONFIG_PATH: /usr/local/Homebrew/Library/Homebrew/os/mac/pkgconfig//12
         with:
-          cmake_args: '-GNinja -DLLVM_ENABLE_PROJECTS="${{ inputs.projects }}" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="${{ inputs.experimental_targets }}" -DCMAKE_BUILD_TYPE=Release -DLLDB_INCLUDE_TESTS=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache'
+          cmake_args: '-GNinja -DLLVM_ENABLE_PROJECTS="${{ inputs.projects }}" -DCMAKE_BUILD_TYPE=Release -DLLDB_INCLUDE_TESTS=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ${{ inputs.extra_cmake_args }}'
           build_target: '${{ inputs.build_target }}'
 
       - name: Build and Test libclc
