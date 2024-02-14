@@ -1185,3 +1185,30 @@ Register SPIRVGlobalRegistry::getOrCreateUndef(MachineInstr &I,
                                    *ST.getRegisterInfo(), *ST.getRegBankInfo());
   return Res;
 }
+
+// Sets the HLSL Resource metadata corresponding to the given LLVM IR
+// GlobalVariable.
+void SPIRVGlobalRegistry::setHLSLResourceForGlobalVar(const GlobalVariable *GV,
+                                                      MDNode *Res) {
+  GlobalVarToHLSLRes[GV] = Res;
+}
+
+// Gets the HLSL Resource metadata corresponding to the given LLVM IR
+// GlobalVariable.
+MDNode *
+SPIRVGlobalRegistry::getHLSLResourceForGlobalVar(const GlobalVariable *GV) {
+  auto it = GlobalVarToHLSLRes.find(GV);
+  if (it == GlobalVarToHLSLRes.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
+void SPIRVGlobalRegistry::setResourceIndexToReg(uint32_t Index, Register Reg) {
+  ResourceIndexToReg[Index] = Reg;
+}
+
+Register SPIRVGlobalRegistry::getRegForResourceIndex(uint32_t Index) {
+  // TODO assert
+  return ResourceIndexToReg[Index];
+}

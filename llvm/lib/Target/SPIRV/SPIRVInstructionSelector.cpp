@@ -27,6 +27,7 @@
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Frontend/HLSL/HLSLResource.h"
 #include "llvm/IR/IntrinsicsSPIRV.h"
 #include "llvm/Support/Debug.h"
 
@@ -181,6 +182,9 @@ private:
 
   bool selectLog10(Register ResVReg, const SPIRVType *ResType,
                    MachineInstr &I) const;
+
+  bool selectCreateHandle(Register ResVReg, const SPIRVType *ResType,
+                          MachineInstr &I) const;
 
   Register buildI32Constant(uint32_t Val, MachineInstr &I,
                             const SPIRVType *ResType = nullptr) const;
@@ -1427,6 +1431,8 @@ bool SPIRVInstructionSelector::selectIntrinsic(Register ResVReg,
           .addUse(I.getOperand(2).getReg())
           .addUse(I.getOperand(3).getReg());
     break;
+  case Intrinsic::spv_create_handle:
+    return selectCreateHandle(ResVReg, ResType, I);
   default:
     llvm_unreachable("Intrinsic selection not implemented");
   }
@@ -1586,6 +1592,51 @@ bool SPIRVInstructionSelector::selectGlobalValue(
   auto GlobalVar = cast<GlobalVariable>(GV);
   assert(GlobalVar->getName() != "llvm.global.annotations");
 
+  // Handle GlobalVariables representing HLSL resources.
+  MDNode *HlslResourceMDNode = GR.getHLSLResourceForGlobalVar(GlobalVar);
+  if (HlslResourceMDNode) {
+    hlsl::FrontendResource HlslResource =
+        hlsl::FrontendResource(HlslResourceMDNode);
+
+    LLVMContext &Context = MIRBuilder.getMF().getFunction().getContext();
+    dxil::ElementType ElemType = HlslResource.getElementType();
+    assert(GlobalVar == HlslResource.getGlobalVariable());
+
+    Type *LLVMElemTy;
+    switch (ElemType) {
+    case dxil::ElementType::F32:
+      LLVMElemTy = Type::getFloatTy(Context);
+      break;
+    // TODO: Other types
+    default:
+      llvm_unreachable("HLSL resource element type not yet supported");
+    }
+
+    SPIRVType *SpirvElemType = GR.getOrCreateSPIRVType(
+        LLVMElemTy, MIRBuilder,
+        /*TODO ro/rw? */ llvm::SPIRV::AccessQualifier::ReadWrite, false);
+
+    // TODO: Hardcoding a RWBuffer<float>, but should switch based on
+    // ResourceKind and ElemType. See table:
+    // https://github.com/microsoft/DirectXShaderCompiler/blob/main/docs/SPIR-V.rst#L843
+    dxil::ResourceKind ResourceKind = HlslResource.getResourceKind();
+    ResType = GR.getOrCreateOpTypeImage(
+        MIRBuilder, SpirvElemType, SPIRV::Dim::Dim::DIM_Buffer, 2, 0, 0, 2,
+        SPIRV::ImageFormat::ImageFormat::R32f,
+        llvm::SPIRV::AccessQualifier::ReadWrite);
+
+    // TODO: Set descriptor set and binding decorations.
+
+    Register Reg = GR.buildGlobalVariable(
+        ResVReg, ResType, GlobalIdent, GV, SPIRV::StorageClass::UniformConstant,
+        Init, GlobalVar->isConstant(), false, {}, MIRBuilder, true);
+
+    // TODO: Store to map indexed by resource class and index that can be
+    // referenced by selectCreateHandle. (setResourceIndexToReg)
+
+    return Reg.isValid();
+  }
+
   bool HasInit = GlobalVar->hasInitializer() &&
                  !isa<UndefValue>(GlobalVar->getInitializer());
   // Skip empty declaration for GVs with initilaizers till we get the decl with
@@ -1658,6 +1709,33 @@ bool SPIRVInstructionSelector::selectLog10(Register ResVReg,
                 .constrainAllUses(TII, TRI, RBI);
 
   return Result;
+}
+
+bool SPIRVInstructionSelector::selectCreateHandle(Register ResVReg,
+                                                  const SPIRVType *ResType,
+                                                  MachineInstr &I) const {
+  MachineIRBuilder MIRBuilder(I);
+
+  // Asssuming resource class is a constant value, wrapped in an ASSIGN_TYPE
+  //  i8,                   ; resource class: SRV=0, UAV=1, CBV=2, Sampler=3
+  assert(I.getOperand(2).isReg());
+  Register ResourceClassReg = I.getOperand(2).getReg();
+  SPIRVType *ConstTy = this->MRI->getVRegDef(ResourceClassReg);
+
+  assert(ConstTy && ConstTy->getOpcode() == SPIRV::ASSIGN_TYPE &&
+         ConstTy->getOperand(1).isReg());
+  Register ConstReg = ConstTy->getOperand(1).getReg();
+  const MachineInstr *Const = this->MRI->getVRegDef(ConstReg);
+  assert(Const && Const->getOpcode() == TargetOpcode::G_CONSTANT);
+  const llvm::APInt &Val = Const->getOperand(1).getCImm()->getValue();
+  const uint32_t ResourceClass = Val.getZExtValue();
+
+  // TODO: Seems like create.handle intrinsic has insufficient info right now to
+  // point to a unique resource.
+
+  Register Reg = GR.getRegForResourceIndex(ResourceClass);
+
+  return false;
 }
 
 namespace llvm {

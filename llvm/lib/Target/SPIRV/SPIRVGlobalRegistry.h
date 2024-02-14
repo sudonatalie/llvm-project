@@ -20,6 +20,7 @@
 #include "SPIRVDuplicatesTracker.h"
 #include "SPIRVInstrInfo.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
+#include "llvm/Frontend/HLSL/HLSLResource.h" // TODO forward ref
 
 namespace llvm {
 using SPIRVType = const MachineInstr;
@@ -68,6 +69,13 @@ class SPIRVGlobalRegistry {
   restOfCreateSPIRVType(const Type *Type, MachineIRBuilder &MIRBuilder,
                         SPIRV::AccessQualifier::AccessQualifier AccessQual,
                         bool EmitIR);
+
+  DenseMap<const GlobalVariable *, MDNode *> GlobalVarToHLSLRes;
+
+  // Maps HLSL resource indices to the corresponding global (module) variable's
+  // Register.
+  //  TODO should this be indexed by both resource class and index?
+  DenseMap<uint32_t, Register> ResourceIndexToReg;
 
 public:
   SPIRVGlobalRegistry(unsigned PointerSize);
@@ -343,6 +351,22 @@ public:
   SPIRVType *getOrCreateOpTypeByOpcode(const Type *Ty,
                                        MachineIRBuilder &MIRBuilder,
                                        unsigned Opcode);
+
+  // Sets the HLSL Resource metadata corresponding to the given LLVM IR
+  // GlobalVariable.
+  void setHLSLResourceForGlobalVar(const GlobalVariable *, MDNode *);
+
+  // Gets the HLSL Resource metadata corresponding to the given LLVM IR
+  // GlobalVariable.
+  MDNode *getHLSLResourceForGlobalVar(const GlobalVariable *);
+
+  // Sets the HLSL Resource metadata corresponding to the given LLVM IR
+  // GlobalVariable.
+  void setResourceIndexToReg(uint32_t, Register);
+
+  // Gets the HLSL Resource metadata corresponding to the given LLVM IR
+  // GlobalVariable.
+  Register getRegForResourceIndex(uint32_t);
 };
 } // end namespace llvm
 #endif // LLLVM_LIB_TARGET_SPIRV_SPIRVTYPEMANAGER_H

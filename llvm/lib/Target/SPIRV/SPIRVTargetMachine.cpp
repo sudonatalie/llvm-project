@@ -169,6 +169,7 @@ void SPIRVPassConfig::addIRPasses() {
   TargetPassConfig::addIRPasses();
   addPass(createSPIRVRegularizerPass());
   addPass(createSPIRVPrepareFunctionsPass(TM));
+  addPass(createSPIRVPrepareModuleVariablesPass(TM));
   addPass(createSPIRVStripConvergenceIntrinsicsPass());
 }
 

@@ -38,7 +38,7 @@ class FrontendResource {
   MDNode *Entry;
 
 public:
-  FrontendResource(MDNode *E) : Entry(E) {
+  FrontendResource(MDNode *E) : Entry(E) { // TODO constify param?
     assert(Entry->getNumOperands() == 6 && "Unexpected metadata shape");
   }
 
